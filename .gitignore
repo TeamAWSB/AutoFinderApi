@@ -1,0 +1,29 @@
+# Ignorowanie plików konfiguracji
+appconfig.json
+
+# Ignorowanie plików specyficznych dla środowiska
+.env
+
+# Ignorowanie plików Pythonowych
+*.py[cod]
+__pycache__/
+*.so
+
+# Ignorowanie plików specyficznych dla systemu operacyjnego
+.DS_Store
+Thumbs.db
+
+# Ignorowanie wirtualnych środowisk
+venv/
+.env/
+
+# Ignorowanie plików logów
+*.log
+
+# Ignorowanie plików bazy danych SQLite
+*.sqlite3
+
+# Ignorowanie plików specyficznych dla edytorów
+.vscode/
+.idea/
+*.swp

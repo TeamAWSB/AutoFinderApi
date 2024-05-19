@@ -2,13 +2,25 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from helper import Helper
 import json
+import os
 import fdb
 
 app = Flask(__name__)
 CORS(app)
 
+def load_config():
+    config_filename = 'appconfig.json'
+    if not os.path.exists(config_filename):
+        config_filename = 'appconfig.example.json'
+    
+    with open(config_filename, 'r') as file:
+        config = json.load(file)
+    
+    return config
+
 def connect_to_firebirdsql():
-    return fdb.connect(dsn='H:/Projects/Python/AutoFinderApi/AUTOFINDER.fdb', user='sysdba', password='admin')
+    config = load_config()
+    return fdb.connect(dsn=config.get('Data Source'), user=config.get('User'), password=config.get('Password'))
 
 @app.route("/")
 def home():
@@ -50,7 +62,7 @@ inner join TRANSMISSION tmn on tmn.ID_TRANSMISSION = veh.ID_TRANSMISSIONS"""
                 query += ')'
 
             if len(fuelTypes) > 0:
-                query += '('
+                query += 'and ('
                 for id, fuel in enumerate(fuelTypes):
                     query += f"""flt.ID_FUEL_TYPE = {fuel}"""
 
@@ -100,6 +112,69 @@ inner join TRANSMISSION tmn on tmn.ID_TRANSMISSION = veh.ID_TRANSMISSIONS"""
         cursor.close()
         connection.close()
     
+@app.route('/favoriteVehicles', methods=['POST'])
+def GetFavoriteVehicles():
+    if not request.is_json:
+        return jsonify({'error': "No data json" }), 400
+
+    try:
+        data = request.get_json()
+        userId = data['userId']
+
+        connection = connect_to_firebirdsql()
+        cursor = connection.cursor()
+
+        query = f"""select veh.ID_VEHICLES, mrk."NAME", mdl."NAME", gen."NAME", tpe."NAME", gen.YEAR_BEGIN, gen.YEAR_END, cls."NAME", flt."NAME", egn."NAME", egn.ENGINECAPASITY, egn.HORSEPOWER, tmn."NAME", veh.URLIMAGE, veh.DESCRIPTION from VEHICLES veh
+inner join MARK mrk on mrk.ID_MARK = veh.ID_MARK
+inner join MODEL mdl on mdl.ID_MODEL = veh.ID_MODEL
+inner join GENERATIONS gen on gen.ID_GENERATIONS = veh.ID_GENERATION
+inner join CLASS cls on cls.ID_CLASS = veh.ID_CLASS
+inner join FUEL_TYPE flt on flt.ID_FUEL_TYPE = veh.ID_FUEL_TYPE
+inner join ENGINES egn on egn.ID_ENGINES = veh.ID_ENGINES
+inner join "TYPE" tpe on tpe.ID_TYPE = veh.ID_TYPE
+inner join TRANSMISSION tmn on tmn.ID_TRANSMISSION = veh.ID_TRANSMISSIONS
+inner join FAVORITEVEHICLES fvl on fvl.VEHICLEID = veh.ID_VEHICLES
+inner join USERS usr on usr.ID = fvl.USERID
+where usr.ID={userId}"""
+
+        cursor.execute(query)
+        rows = cursor.fetchall()
+
+        data = []
+        for row in rows:
+            description = str(row[14],'windows-1250')
+            new = {
+                'id': str(row[0]),
+                'mark': str(row[1]),
+                'model': str(row[2]),
+                'class': str(row[7]),
+                'type': str(4),
+                'description': description,
+                'generations':[
+                    {
+                        'generation': str(row[3]),
+                        'yearBegin': str(row[5]),
+                        'yearEnd': str(row[6]),
+                        'fuelType': str(row[8]),
+                        'engineGeneration': str(row[9]),
+                        'engineCapacity': str(row[10]),
+                        'horsepower': str(row[11]),
+                        'transmissionType': str(row[12]),
+                        'urlImage': str(row[13])[2:-1],
+                    }
+                ]
+            }
+
+            data.append(new)
+
+        json_data = json.dumps(data, ensure_ascii=False)
+        return json_data
+    except Exception as e:
+        return jsonify({'error': str(e) }), 200
+    finally:
+        cursor.close()
+        connection.close()
+
 @app.route('/fuelTypes', methods=['GET'])
 def GetFuelTypes():
     try:
@@ -163,14 +238,19 @@ def Login():
         connection = connect_to_firebirdsql()
         cursor = connection.cursor()
 
-        cursor.execute(f"SELECT * FROM USERS where EMAIL='{email}' and PASSWORD='{password}'")
+        cursor.execute(f"""SELECT * FROM USERS r
+        WHERE r.EMAIL='{email}' AND r."PASSWORD"='{password}'""")
         rows = cursor.fetchall()
 
-        if len(rows) == 0:
-            return jsonify({'error': 'User not found'}), 404
+        if len(rows) == 1:
+            return jsonify({
+                'name': rows[0][1],
+                'email': rows[0][3]
+                }), 200
         else:
-            return jsonify({'user': rows[0][1]}), 200
+            return jsonify({'error': 'Email or password is incorrent!'}), 404
     except Exception as e:
+        print(str(e))
         return jsonify({'error': str(e) }), 200
     finally:
         cursor.close()
@@ -222,7 +302,7 @@ def Register():
         name = data.get('name')
         surname = data.get('surname')
         email = data.get('email')
-        age = data.get('age')
+        birthOfYear = data.get('birthOfYear')
         country = data.get('country')
         password = data.get('password')
 
@@ -235,10 +315,10 @@ def Register():
         if len(rows) > 0:
             return jsonify({'error': 'The user already exists with this email address!'}), 200
 
-        cursor.execute(f"""INSERT INTO Users ("NAME", SURNAME, EMAIL, AGE, COUNTRY, "PASSWORD") VALUES ('{name}', '{surname}', '{email}', {age}, '{country}', '{password}')""")
+        cursor.execute(f"""INSERT INTO Users ("NAME", SURNAME, EMAIL, BIRTH_OF_YEAR, COUNTRY, "PASSWORD") VALUES ('{name}', '{surname}', '{email}', {birthOfYear}, '{country}', '{password}')""")
         connection.commit()
 
-        return jsonify({'status': 'Succes'}), 200
+        return jsonify({'status': True}), 200
     except Exception as e:
         return jsonify({'error': str(e) }), 200
     finally:
