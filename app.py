@@ -85,6 +85,7 @@ inner join TRANSMISSION tmn on tmn.ID_TRANSMISSION = veh.ID_TRANSMISSIONS"""
                 'description': description,
                 'generations':[
                     {
+                        'vehicleId': str(row[0]),
                         'generation': str(row[3]),
                         'yearBegin': str(row[5]),
                         'yearEnd': str(row[6]),
@@ -135,7 +136,7 @@ inner join "TYPE" tpe on tpe.ID_TYPE = veh.ID_TYPE
 inner join TRANSMISSION tmn on tmn.ID_TRANSMISSION = veh.ID_TRANSMISSIONS
 inner join FAVORITEVEHICLES fvl on fvl.VEHICLEID = veh.ID_VEHICLES
 inner join USERS usr on usr.ID = fvl.USERID
-where usr.ID={userId}"""
+where usr.ID={userId} and fvl.LIKED = true"""
 
         cursor.execute(query)
         rows = cursor.fetchall()
@@ -152,6 +153,7 @@ where usr.ID={userId}"""
                 'description': description,
                 'generations':[
                     {
+                        'vehicleId': str(row[0]),
                         'generation': str(row[3]),
                         'yearBegin': str(row[5]),
                         'yearEnd': str(row[6]),
@@ -170,6 +172,46 @@ where usr.ID={userId}"""
         json_data = json.dumps(data, ensure_ascii=False)
         return json_data
     except Exception as e:
+        return jsonify({'error': str(e) }), 200
+    finally:
+        cursor.close()
+        connection.close()
+
+@app.route('/setLikeVehicle', methods=['POST'])
+def SetLikeVehicle():
+    if not request.is_json:
+        return jsonify({'error': "No data json" }), 400
+
+    try:
+        data = request.get_json()
+        vehicleId = data.get('vehicleId')
+        userId = data.get('userId')
+        status = data.get('status')
+
+        connection = connect_to_firebirdsql()
+        cursor = connection.cursor()
+
+        cursor.execute(f"""SELECT r.ID, r.USERID, r.VEHICLEID, r.LIKED
+        FROM FAVORITEVEHICLES r
+        WHERE r.VEHICLEID = {vehicleId} AND r.USERID = {userId}""")
+        rows = cursor.fetchall()
+
+        if len(rows) == 0:
+            cursor.execute(f"""INSERT INTO FAVORITEVEHICLES (USERID, VEHICLEID, LIKED)
+            VALUES ({userId}, {vehicleId}, true);""")
+            connection.commit()
+            return jsonify({'result': 'success'}), 200
+        elif len(rows) == 1:
+            cursor.execute(f"""UPDATE FAVORITEVEHICLES a SET 
+                a.LIKED = {status}
+            WHERE
+                a.ID = {rows[0][0]}""")
+            connection.commit()
+            return jsonify({'result': 'success'}), 200
+        else:
+            return jsonify({'error': 'Unexpected error in the database'}), 404
+    except Exception as e:
+        print(str(e))
         return jsonify({'error': str(e) }), 200
     finally:
         cursor.close()
@@ -244,6 +286,7 @@ def Login():
 
         if len(rows) == 1:
             return jsonify({
+                'id': rows[0][0],
                 'name': rows[0][1],
                 'email': rows[0][3]
                 }), 200
